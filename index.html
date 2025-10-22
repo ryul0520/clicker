@@ -230,7 +230,6 @@ const game = {
     handleTouchMove(e) {
         e.preventDefault(); const touchState = this.state.dungeon.touch;
         if (touchState.joystickId === null) return;
-        // ⭐ 버그 수정: changedTouches -> touches
         for (const touch of e.touches) {
             if (touch.identifier === touchState.joystickId) {
                 const deltaX = touch.clientX - touchState.joystickBasePos.x; const deltaY = touch.clientY - touchState.joystickBasePos.y;
@@ -311,10 +310,12 @@ const game = {
 
     generateFloor() {
         const d = this.state.dungeon; d.enemies = [];
+        const hpMultiplier = 2; const attackMultiplier = 2;
         if (d.floor === 10) {
             d.isBossFloor = true;
             d.enemies.push({ isBoss: true, type: 'boss', x: 400, y: 150, size: 80, speed: 0.8,
-                hp: 10000, maxHp: 10000, attack: 300, hitCooldown: 0, gold: 1000, spawnTimer: 300, wasHitInThisSwing: false });
+                hp: 5000 * hpMultiplier, maxHp: 5000 * hpMultiplier, 
+                attack: 150 * attackMultiplier, hitCooldown: 0, gold: 1000, spawnTimer: 300, wasHitInThisSwing: false });
             return;
         }
         const numEnemies = Math.min(10, 2 + d.floor);
@@ -324,8 +325,8 @@ const game = {
                 type: isRanged ? 'ranged' : 'melee',
                 x: Math.random() * 750 + 25, y: Math.random() * 300 + 25,
                 size: 15 + Math.random() * 10, speed: 0.8 + d.floor * 0.1,
-                hp: Math.ceil(60 * Math.pow(1.4, d.floor - 1)), maxHp: Math.ceil(60 * Math.pow(1.4, d.floor - 1)),
-                attack: Math.ceil(16 * Math.pow(1.3, d.floor - 1)), hitCooldown: 0, gold: 1 + Math.floor(d.floor * 2),
+                hp: Math.ceil(30 * Math.pow(1.4, d.floor - 1)) * hpMultiplier, maxHp: Math.ceil(30 * Math.pow(1.4, d.floor - 1)) * hpMultiplier,
+                attack: Math.ceil(8 * Math.pow(1.3, d.floor - 1)) * attackMultiplier, hitCooldown: 0, gold: 1 + Math.floor(d.floor * 2),
                 shootCooldown: isRanged ? 120 : 0, wasHitInThisSwing: false
             });
         }
@@ -376,7 +377,7 @@ const game = {
                 if (dist > 100) { e.x += (dx / dist) * e.speed; e.y += (dy / dist) * e.speed; }
                 if (e.spawnTimer > 0) e.spawnTimer--;
                 else {
-                    d.enemies.push({ type: 'minion', x: e.x, y: e.y, size: 15, speed: 1.5, hp: 200, maxHp: 200, attack: 40, hitCooldown: 0, gold: 5, wasHitInThisSwing: false });
+                    d.enemies.push({ type: 'minion', x: e.x, y: e.y, size: 15, speed: 1.5, hp: 400, maxHp: 400, attack: 80, hitCooldown: 0, gold: 5, wasHitInThisSwing: false });
                     e.spawnTimer = 400 - d.floor * 10;
                 }
             }
@@ -393,10 +394,10 @@ const game = {
         const d = this.state.dungeon, p = d.player, canvas = this.elements.canvas;
         d.projectiles.forEach(proj => {
             proj.x += proj.vx; proj.y += proj.vy;
-            if (this.isColliding(proj, p)) { p.hp -= proj.damage; proj.hp = 0; if (p.hp <= 0) this.handlePlayerDeath(); } 
-            else if (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height) { proj.hp = 0; }
+            if (this.isColliding(proj, p)) { p.hp -= proj.damage; proj.isRemoved = true; if (p.hp <= 0) this.handlePlayerDeath(); } 
+            else if (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height) { proj.isRemoved = true; }
         });
-        d.projectiles = d.projectiles.filter(proj => proj.hp !== 0);
+        d.projectiles = d.projectiles.filter(proj => !proj.isRemoved);
     },
     updateHazards() {
         const d = this.state.dungeon, p = d.player, canvas = this.elements.canvas;
@@ -423,12 +424,10 @@ const game = {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         d.hazards.forEach(h => {
             if (h.type === 'bomb') {
-                ctx.fillStyle = 'rgba(255, 255, 0, 0.5)';
-                ctx.beginPath(); ctx.arc(h.x, h.y, h.size, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'rgba(255, 255, 0, 0.5)'; ctx.beginPath(); ctx.arc(h.x, h.y, h.size, 0, Math.PI * 2); ctx.fill();
                 ctx.fillStyle = 'white'; ctx.fillText(Math.ceil(h.timer / 60), h.x, h.y);
             } else if (h.type === 'explosion') {
-                ctx.fillStyle = `rgba(255, 100, 0, ${h.life / 30})`;
-                ctx.beginPath(); ctx.arc(h.x, h.y, h.size, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = `rgba(255, 100, 0, ${h.life / 30})`; ctx.beginPath(); ctx.arc(h.x, h.y, h.size, 0, Math.PI * 2); ctx.fill();
             }
         });
         d.projectiles.forEach(proj => { ctx.fillStyle = '#ffeb3b'; ctx.beginPath(); ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2); ctx.fill(); });
@@ -524,9 +523,9 @@ const game = {
         this.elements.enterDungeonBtn.disabled = p.nextFloorToChallenge > 10;
     },
 
-    saveGame() { localStorage.setItem('bossClickerState_v4', JSON.stringify(this.state.permanent)); },
+    saveGame() { localStorage.setItem('bossClickerState_v4_fix', JSON.stringify(this.state.permanent)); },
     loadGame() {
-        const savedState = localStorage.getItem('bossClickerState_v4');
+        const savedState = localStorage.getItem('bossClickerState_v4_fix');
         if (savedState) {
             const loaded = JSON.parse(savedState);
             this.state.permanent.soul = loaded.soul || 0;

@@ -2,7 +2,8 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>환생 클리커 v3</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>환생 클리커 v5: 모바일 지원</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #1a1a1a; color: #f0f0f0; margin: 0; user-select: none; overflow: hidden; }
         #clicker-view { width: 1200px; margin: 20px auto; padding: 20px; background-color: #2a2a2a; border-radius: 10px; }
@@ -23,6 +24,7 @@
         .shop-item { display: flex; justify-content: space-between; align-items: center; border: 1px solid #555; padding: 10px; margin-bottom: 10px; border-radius: 5px; }
         .shop-item button { padding: 8px 12px; cursor: pointer; color: white; border: none; border-radius: 3px; }
         .shop-item button.automation-btn { background: #2980b9; }
+        .shop-item button.equipment-btn { background: #27ae60; }
         .shop-item button.soul-btn { background: #8e44ad; }
         .shop-item button:disabled { background: #7f8c8d; cursor: not-allowed; }
         #dungeon-entry-controls { text-align: center; margin-top: 20px; }
@@ -40,10 +42,19 @@
         #death-message { color: #e74c3c; }
         #floor-clear-message { color: #2ecc71; }
         #continue-btn { padding: 10px 20px; font-size: 1.2em; margin-top: 20px; background: #27ae60; color: white; border: none; border-radius: 5px; cursor: pointer; }
+
+        /* ⭐ 가상 컨트롤러 스타일 */
+        #virtual-controls { display: none; position: fixed; bottom: 0; left: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+        #virtual-controls.active { display: block; opacity: 1; }
+        #joystick-base { position: absolute; bottom: 50px; left: 50px; width: 120px; height: 120px; background: rgba(128, 128, 128, 0.3); border-radius: 50%; pointer-events: all; }
+        #joystick-stick { position: absolute; top: 35px; left: 35px; width: 50px; height: 50px; background: rgba(200, 200, 200, 0.5); border-radius: 50%; }
+        #attack-button { position: absolute; bottom: 50px; right: 50px; width: 80px; height: 80px; background: rgba(231, 76, 60, 0.5); border: 2px solid rgba(231, 76, 60, 0.8); border-radius: 50%; pointer-events: all; display: flex; justify-content: center; align-items: center; font-size: 1.5em; color: white; }
+        #attack-button:active { background: rgba(192, 57, 43, 0.8); }
     </style>
 </head>
 <body>
     <div id="clicker-view">
+        <!-- ... (마을 HTML 구조는 이전과 동일) ... -->
         <header><h1>환생 클리커</h1></header>
         <main id="main-content">
             <section class="section">
@@ -59,9 +70,11 @@
                 <h2>상점</h2>
                 <div class="shop-tabs">
                     <div class="shop-tab active" data-tab="automation">자동화</div>
+                    <div class="shop-tab" data-tab="equipment">장비</div>
                     <div class="shop-tab" data-tab="soul">영혼 상점</div>
                 </div>
                 <div id="automation-shop" class="shop-content active"></div>
+                <div id="equipment-shop" class="shop-content"></div>
                 <div id="soul-shop" class="shop-content"></div>
             </section>
             <section class="section">
@@ -92,35 +105,31 @@
             <p>획득한 금액: <span id="clear-loot-display">0</span></p>
             <button id="continue-btn">마을로 귀환</button>
         </div>
+        
+        <!-- ⭐ 가상 컨트롤러 HTML -->
+        <div id="virtual-controls">
+            <div id="joystick-base">
+                <div id="joystick-stick"></div>
+            </div>
+            <div id="attack-button">⚔️</div>
+        </div>
     </div>
 
 <script>
 const game = {
+    // ... (state, elements, ctx 초기화는 이전과 유사) ...
     state: {
-        clicker: { money: 0, upgrades: [] },
+        clicker: { money: 0, upgrades: [], equipment: {} },
         permanent: { soul: 0, nextFloorToChallenge: 1, upgrades: [] },
         dungeon: {
             isActive: false, isFloorCleared: false, floor: 1, loot: 0, keys: {},
-            player: {}, enemies: [], loopId: null, floatingTexts: []
+            player: {}, enemies: [], loopId: null
         }
     },
     elements: {}, ctx: null,
 
     init() {
-        this.state.clicker.upgrades = [
-            { id: 'worker', name: '알바생', level: 0, baseCost: 15, cost: 15, dps: 1 },
-            { id: 'machine', name: '코인 기계', level: 0, baseCost: 120, cost: 120, dps: 8 },
-            { id: 'factory', name: '코인 공장', level: 0, baseCost: 1300, cost: 1300, dps: 50 },
-            { id: 'corp', name: '대기업', level: 0, baseCost: 15000, cost: 15000, dps: 280 },
-            { id: 'bank', name: '중앙 은행', level: 0, baseCost: 180000, cost: 180000, dps: 1500 },
-            { id: 'mint', name: '조폐국', level: 0, baseCost: 2000000, cost: 2000000, dps: 8000 },
-            { id: 'planet', name: '행성 채굴', level: 0, baseCost: 25000000, cost: 25000000, dps: 50000 },
-        ];
-        this.state.permanent.upgrades = [
-            { id: 'soul-power', name: '영혼의 힘', level: 0, cost: 1, effect: 0.1, desc: "모든 DPS 10% 증가" },
-            { id: 'starting-gold', name: '자본금', level: 0, cost: 2, effect: 100, desc: "시작 금액 +100원" },
-            { id: 'warrior-spirit', name: '전사의 영혼', level: 0, cost: 5, effect: 0.1, desc: "던전 공격력 10% 증가" },
-        ];
+        this.resetTemporaryState(true);
         this.cacheElements();
         this.ctx = this.elements.canvas.getContext('2d');
         this.loadGame();
@@ -129,13 +138,34 @@ const game = {
         setInterval(() => this.runAutoProduction(), 100);
         this.updateAllDisplays();
     },
+    
+    resetTemporaryState(isFirstLoad = false) {
+        this.state.clicker.money = 0;
+        this.state.clicker.upgrades = [
+            { id: 'worker', name: '알바생', level: 0, baseCost: 15, cost: 15, dps: 1 },
+            { id: 'machine', name: '코인 기계', level: 0, baseCost: 120, cost: 120, dps: 8 },
+        ];
+        this.state.clicker.equipment = {
+            weapon: { name: '낡은 검', level: 1, baseCost: 50, cost: 50, attack: 5 },
+            armor: { name: '가죽 갑옷', level: 1, baseCost: 50, cost: 50, maxHp: 100 },
+        };
+        if (isFirstLoad) {
+            this.state.permanent.upgrades = [
+                { id: 'soul-power', name: '영혼의 힘', level: 0, cost: 1, effect: 0.1, desc: "모든 DPS 10% 증가" },
+                { id: 'starting-gold', name: '자본금', level: 0, cost: 2, effect: 100, desc: "시작 금액 +100원" },
+                { id: 'warrior-spirit', name: '전사의 영혼', level: 0, cost: 5, effect: 0.1, desc: "던전 공격력 10% 증가" },
+            ];
+        }
+    },
 
     cacheElements() {
         this.elements = {
+            // ... (이전 요소들 생략) ...
             clickerView: document.getElementById('clicker-view'),
             moneyDisplay: document.getElementById('money-display'), dpsDisplay: document.getElementById('dps-display'),
             soulDisplay: document.getElementById('soul-display'),
-            automationShop: document.getElementById('automation-shop'), soulShop: document.getElementById('soul-shop'),
+            automationShop: document.getElementById('automation-shop'), equipmentShop: document.getElementById('equipment-shop'),
+            soulShop: document.getElementById('soul-shop'),
             shopTabs: document.querySelectorAll('.shop-tab'),
             nextFloorDisplay: document.getElementById('next-floor-display'),
             enterDungeonBtn: document.getElementById('enter-dungeon-btn'),
@@ -146,153 +176,150 @@ const game = {
             floorClearMessage: document.getElementById('floor-clear-message'),
             clearLootDisplay: document.getElementById('clear-loot-display'),
             continueBtn: document.getElementById('continue-btn'),
+            // ⭐ 가상 컨트롤러 요소 추가
+            virtualControls: document.getElementById('virtual-controls'),
+            joystickBase: document.getElementById('joystick-base'),
+            joystickStick: document.getElementById('joystick-stick'),
+            attackButton: document.getElementById('attack-button'),
         };
     },
 
     buildShops() {
+        this.elements.automationShop.innerHTML = '';
         this.state.clicker.upgrades.forEach(upg => this.elements.automationShop.innerHTML += this.createShopItemHTML(upg.id, upg.name, upg.level, upg.cost, `DPS: +${upg.dps}`, 'automation-btn'));
+        this.elements.equipmentShop.innerHTML = '';
+        const { weapon, armor } = this.state.clicker.equipment;
+        this.elements.equipmentShop.innerHTML += this.createShopItemHTML('weapon', weapon.name, weapon.level, weapon.cost, `공격력: ${weapon.attack}`, 'equipment-btn');
+        this.elements.equipmentShop.innerHTML += this.createShopItemHTML('armor', armor.name, armor.level, armor.cost, `최대 HP: ${armor.maxHp}`, 'equipment-btn');
+        this.elements.soulShop.innerHTML = '';
         this.state.permanent.upgrades.forEach(upg => this.elements.soulShop.innerHTML += this.createShopItemHTML(upg.id, upg.name, upg.level, upg.cost, upg.desc, 'soul-btn'));
     },
     
     createShopItemHTML(id, name, level, cost, desc, btnClass) {
-        return `<div class="shop-item" id="${id}-item"><div><strong>${name} (Lv.<span id="${id}-level">${level}</span>)</strong><br><small>${desc} | 비용: <span id="${id}-cost">${cost}</span></small></div><button class="shop-btn ${btnClass}" data-id="${id}">구매</button></div>`;
+        return `<div class="shop-item" id="${id}-item"><div><strong>${name} (Lv.<span id="${id}-level">${level}</span>)</strong><br><small id="${id}-desc">${desc}</small> | <small>비용: <span id="${id}-cost">${cost.toLocaleString()}</span></small></div><button class="shop-btn ${btnClass}" data-id="${id}">구매</button></div>`;
     },
 
     addEventListeners() {
+        // ... (기존 이벤트 리스너들 생략) ...
         document.getElementById('main-clicker-css').addEventListener('click', () => { this.state.clicker.money++; this.updateAllDisplays(); });
         this.elements.shopTabs.forEach(tab => tab.addEventListener('click', e => {
             document.querySelectorAll('.shop-tab, .shop-content').forEach(el => el.classList.remove('active'));
             e.target.classList.add('active'); document.getElementById(e.target.dataset.tab + '-shop').classList.add('active');
         }));
         document.querySelector('#automation-shop').addEventListener('click', e => this.buyUpgrade(e, 'automation'));
+        document.querySelector('#equipment-shop').addEventListener('click', e => this.buyUpgrade(e, 'equipment'));
         document.querySelector('#soul-shop').addEventListener('click', e => this.buyUpgrade(e, 'soul'));
         this.elements.enterDungeonBtn.addEventListener('click', () => this.enterDungeon());
         this.elements.continueBtn.addEventListener('click', () => this.exitDungeonSafely());
+        // ⭐ 가상 컨트롤러 이벤트 리스너 추가
+        this.addVirtualControlsListeners();
     },
 
+    // ⭐ 가상 컨트롤러 로직
+    addVirtualControlsListeners() {
+        const { joystickBase, joystickStick, attackButton } = this.elements;
+        let joystick = { active: false, startX: 0, startY: 0, maxDistance: 40 };
+
+        const handleMove = (e) => {
+            if (!joystick.active) return;
+            e.preventDefault();
+            const touch = e.touches ? e.touches[0] : e;
+            const deltaX = touch.clientX - joystick.startX;
+            const deltaY = touch.clientY - joystick.startY;
+            const distance = Math.min(joystick.maxDistance, Math.sqrt(deltaX * deltaX + deltaY * deltaY));
+            const angle = Math.atan2(deltaY, deltaX);
+            
+            const moveX = Math.cos(angle) * distance;
+            const moveY = Math.sin(angle) * distance;
+            joystickStick.style.transform = `translate(${moveX}px, ${moveY}px)`;
+
+            const keys = this.state.dungeon.keys;
+            keys['w'] = keys['arrowup'] = deltaY < -joystick.maxDistance * 0.3;
+            keys['s'] = keys['arrowdown'] = deltaY > joystick.maxDistance * 0.3;
+            keys['a'] = keys['arrowleft'] = deltaX < -joystick.maxDistance * 0.3;
+            keys['d'] = keys['arrowright'] = deltaX > joystick.maxDistance * 0.3;
+        };
+        const handleEnd = () => {
+            if (!joystick.active) return;
+            joystick.active = false;
+            joystickStick.style.transform = `translate(0px, 0px)`;
+            Object.keys(this.state.dungeon.keys).forEach(k => this.state.dungeon.keys[k] = false);
+        };
+
+        joystickBase.addEventListener('touchstart', (e) => {
+            e.preventDefault(); joystick.active = true;
+            const touch = e.touches[0];
+            const rect = joystickBase.getBoundingClientRect();
+            joystick.startX = rect.left + rect.width / 2;
+            joystick.startY = rect.top + rect.height / 2;
+        }, { passive: false });
+        
+        window.addEventListener('touchmove', handleMove, { passive: false });
+        window.addEventListener('touchend', handleEnd);
+        
+        attackButton.addEventListener('touchstart', (e) => { e.preventDefault(); this.state.dungeon.keys[' '] = true; });
+        attackButton.addEventListener('touchend', (e) => { e.preventDefault(); this.state.dungeon.keys[' '] = false; });
+    },
+
+    // ... (runAutoProduction, buyUpgrade 로직은 이전과 동일) ...
     runAutoProduction() {
         const soulPowerBonus = 1 + (this.state.permanent.upgrades.find(u => u.id === 'soul-power').level * 0.1);
         const baseDps = this.state.clicker.upgrades.reduce((sum, upg) => sum + upg.level * upg.dps, 0);
         this.state.clicker.money += (baseDps * soulPowerBonus) / 10;
         this.updateAllDisplays();
     },
-
     buyUpgrade(event, type) {
         if (event.target.tagName !== 'BUTTON') return;
         const id = event.target.dataset.id;
+        const c = this.state.clicker; const p = this.state.permanent;
         if (type === 'automation') {
-            const upg = this.state.clicker.upgrades.find(u => u.id === id);
-            if (this.state.clicker.money >= upg.cost) { this.state.clicker.money -= upg.cost; upg.level++; upg.cost = Math.ceil(upg.cost * 1.25); }
+            const upg = c.upgrades.find(u => u.id === id);
+            if (c.money >= upg.cost) { c.money -= upg.cost; upg.level++; upg.cost = Math.ceil(upg.cost * 1.25); }
+        } else if (type === 'equipment') {
+            const item = c.equipment[id];
+            if (c.money >= item.cost) {
+                c.money -= item.cost; item.level++; item.cost = Math.ceil(item.cost * 1.8);
+                if (id === 'weapon') item.attack = Math.floor(item.attack * 1.5);
+                if (id === 'armor') item.maxHp = Math.floor(item.maxHp * 1.5);
+            }
         } else if (type === 'soul') {
-            const upg = this.state.permanent.upgrades.find(u => u.id === id);
-            if (this.state.permanent.soul >= upg.cost) {
-                this.state.permanent.soul -= upg.cost; upg.level++; upg.cost = Math.ceil(upg.cost * 1.5);
-                if (upg.id === 'starting-gold') this.state.clicker.money += upg.effect;
+            const upg = p.upgrades.find(u => u.id === id);
+            if (p.soul >= upg.cost) {
+                p.soul -= upg.cost; upg.level++; upg.cost = Math.ceil(upg.cost * 1.5);
+                if (upg.id === 'starting-gold') c.money += upg.effect;
             }
         }
         this.updateAllDisplays();
     },
 
+    // ... (던전 로직은 이전과 거의 동일, 컨트롤러 표시/숨김만 추가) ...
     enterDungeon() {
         this.elements.clickerView.style.display = 'none'; this.elements.dungeonOverlay.style.display = 'flex';
+        this.elements.virtualControls.classList.add('active'); // ⭐ 컨트롤러 보이기
+        
         const d = this.state.dungeon;
         d.isActive = true; d.isFloorCleared = false; d.floor = this.state.permanent.nextFloorToChallenge;
-        d.loot = 0; d.keys = {}; d.floatingTexts = [];
+        d.loot = 0; d.keys = {};
+        
         const warriorSpiritBonus = 1 + (this.state.permanent.upgrades.find(u => u.id === 'warrior-spirit').level * 0.1);
-        d.player = { x: 400, y: 500, size: 20, speed: 3, hp: 100, maxHp: 100, attack: 10 * warriorSpiritBonus, isAttacking: false, attackTimer: 0, attackHitbox: null };
+        d.player = { 
+            x: 400, y: 500, size: 20, speed: 3, 
+            maxHp: this.state.clicker.equipment.armor.maxHp, 
+            hp: this.state.clicker.equipment.armor.maxHp, 
+            attack: this.state.clicker.equipment.weapon.attack * warriorSpiritBonus, 
+            isAttacking: false, attackTimer: 0, attackHitbox: null 
+        };
         this.generateFloor();
         window.addEventListener('keydown', e => this.state.dungeon.keys[e.key.toLowerCase()] = true);
         window.addEventListener('keyup', e => this.state.dungeon.keys[e.key.toLowerCase()] = false);
         d.loopId = requestAnimationFrame(this.dungeonLoop.bind(this));
     },
-
-    generateFloor() {
-        const d = this.state.dungeon; d.enemies = []; const numEnemies = 2 + d.floor;
-        for (let i = 0; i < numEnemies; i++) {
-            d.enemies.push({
-                x: Math.random() * 750 + 25, y: Math.random() * 300 + 25,
-                size: 15 + Math.random() * 10, speed: 0.5 + Math.random() * 0.5,
-                hp: Math.ceil(20 * d.floor * 1.2), maxHp: Math.ceil(20 * d.floor * 1.2),
-                attack: Math.ceil(5 * d.floor * 1.1), hitCooldown: 0, gold: 1 + Math.floor(d.floor * 2)
-            });
-        }
-    },
-
-    dungeonLoop() {
-        if (!this.state.dungeon.isActive) return;
-        this.updateDungeonState();
-        this.drawDungeon();
-        this.state.dungeon.loopId = requestAnimationFrame(this.dungeonLoop.bind(this));
-    },
-
-    updateDungeonState() {
-        const d = this.state.dungeon; if (d.isFloorCleared) return; const p = d.player;
-        if (d.keys['w'] || d.keys['ArrowUp']) p.y -= p.speed; if (d.keys['s'] || d.keys['ArrowDown']) p.y += p.speed;
-        if (d.keys['a'] || d.keys['ArrowLeft']) p.x -= p.speed; if (d.keys['d'] || d.keys['ArrowRight']) p.x += p.speed;
-        p.x = Math.max(p.size, Math.min(this.elements.canvas.width - p.size, p.x));
-        p.y = Math.max(p.size, Math.min(this.elements.canvas.height - p.size, p.y));
-        if (p.attackTimer > 0) p.attackTimer--;
-        if (d.keys[' '] && p.attackTimer === 0) {
-            p.isAttacking = true; p.attackTimer = 30; p.attackHitbox = { x: p.x, y: p.y, size: 60 };
-        } else if (p.attackTimer < 15) { p.isAttacking = false; p.attackHitbox = null; }
-        
-        d.enemies.forEach(e => {
-            if (e.hitCooldown > 0) e.hitCooldown--;
-            const dx = p.x - e.x; const dy = p.y - e.y; const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist > p.size) { e.x += (dx / dist) * e.speed; e.y += (dy / dist) * e.speed; }
-            if (p.attackHitbox && this.isColliding(p.attackHitbox, e)) { e.hp -= p.attack; p.attackHitbox = null; }
-            if (dist < p.size + e.size / 2 && e.hitCooldown === 0) {
-                p.hp -= e.attack; e.hitCooldown = 120;
-                if (p.hp <= 0) { this.handlePlayerDeath(); return; }
-            }
-        });
-        
-        const deadEnemies = d.enemies.filter(e => e.hp <= 0);
-        deadEnemies.forEach(de => d.loot += de.gold);
-        d.enemies = d.enemies.filter(e => e.hp > 0);
-
-        if (d.enemies.length === 0 && !d.isFloorCleared) {
-            d.isFloorCleared = true;
-            const floorClearBonus = 100 * d.floor;
-            d.loot += floorClearBonus;
-            this.handleFloorClear();
-        }
-    },
     
-    isColliding(c1, c2) {
-        const dist = Math.sqrt((c1.x - c2.x)**2 + (c1.y - c2.y)**2);
-        return dist < (c1.size / 2 + c2.size / 2);
-    },
-
-    drawDungeon() {
-        const ctx = this.ctx; const canvas = this.elements.canvas; const d = this.state.dungeon;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        d.enemies.forEach(e => {
-            ctx.fillStyle = e.hitCooldown > 0 ? '#e74c3c' : '#c0392b';
-            ctx.fillRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size);
-            ctx.fillStyle = '#555'; ctx.fillRect(e.x - e.size/2, e.y - e.size/2 - 10, e.size, 5);
-            ctx.fillStyle = 'red'; ctx.fillRect(e.x - e.size/2, e.y - e.size/2 - 10, e.size * (e.hp / e.maxHp), 5);
-        });
-        const p = d.player;
-        ctx.fillStyle = '#3498db'; ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
-        if (p.isAttacking) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-            ctx.beginPath(); ctx.arc(p.x, p.y, 30, 0, Math.PI * 2); ctx.fill();
-        }
-
-        this.elements.floorDisplay.textContent = d.floor; this.elements.lootDisplay.textContent = d.loot.toLocaleString();
-        this.elements.playerHpBar.style.width = `${(p.hp / p.maxHp) * 100}%`;
-    },
+    // ... (generateFloor, dungeonLoop, updateDungeonState, isColliding, drawDungeon, handleFloorClear는 이전과 동일) ...
+    generateFloor(){const d=this.state.dungeon;d.enemies=[];const e=2+d.floor;for(let t=0;t<e;t++)d.enemies.push({x:750*Math.random()+25,y:300*Math.random()+25,size:15+10*Math.random(),speed:.5+.5*Math.random(),hp:Math.ceil(20*d.floor*1.2),maxHp:Math.ceil(20*d.floor*1.2),attack:Math.ceil(5*d.floor*1.1),hitCooldown:0,gold:1+Math.floor(2*d.floor)})},dungeonLoop(){this.state.dungeon.isActive&&(this.updateDungeonState(),this.drawDungeon(),this.state.dungeon.loopId=requestAnimationFrame(this.dungeonLoop.bind(this)))},updateDungeonState(){const d=this.state.dungeon;if(d.isFloorCleared)return;const e=d.player;(d.keys.w||d.keys.arrowup)&&(e.y-=e.speed),(d.keys.s||d.keys.arrowdown)&&(e.y+=e.speed),(d.keys.a||d.keys.arrowleft)&&(e.x-=e.speed),(d.keys.d||d.keys.arrowright)&&(e.x+=e.speed),e.x=Math.max(e.size,Math.min(this.elements.canvas.width-e.size,e.x)),e.y=Math.max(e.size,Math.min(this.elements.canvas.height-e.size,e.y)),e.attackTimer>0&&e.attackTimer--,d.keys[" "]&&0===e.attackTimer?(e.isAttacking=!0,e.attackTimer=30,e.attackHitbox={x:e.x,y:e.y,size:60}):e.attackTimer<15&&(e.isAttacking=!1,e.attackHitbox=null),d.enemies.forEach(t=>{if(t.hitCooldown>0&&t.hitCooldown--,Math.sqrt((e.x-t.x)**2+(e.y-t.y)**2)>e.size){const o=e.x-t.x,s=e.y-t.y,i=Math.sqrt(o*o+s*s);t.x+=o/i*t.speed,t.y+=s/i*t.speed}e.attackHitbox&&this.isColliding(e.attackHitbox,t)&&(t.hp-=e.attack,e.attackHitbox=null),Math.sqrt((e.x-t.x)**2+(e.y-t.y)**2)<e.size+t.size/2&&0===t.hitCooldown&&(e.hp-=t.attack,t.hitCooldown=120,e.hp<=0&&this.handlePlayerDeath())}),d.loot+=d.enemies.filter(e=>e.hp<=0).reduce((e,t)=>e+t.gold,0),d.enemies=d.enemies.filter(e=>e.hp>0),0===d.enemies.length&&!d.isFloorCleared&&(d.isFloorCleared=!0,d.loot+=100*d.floor,this.handleFloorClear())},isColliding(e,t){return Math.sqrt((e.x-t.x)**2+(e.y-t.y)**2)<e.size/2+t.size/2},drawDungeon(){const d=this.ctx,e=this.elements.canvas,t=this.state.dungeon;d.clearRect(0,0,e.width,e.height),t.enemies.forEach(e=>{d.fillStyle=e.hitCooldown>0?"#e74c3c":"#c0392b",d.fillRect(e.x-e.size/2,e.y-e.size/2,e.size,e.size),d.fillStyle="#555",d.fillRect(e.x-e.size/2,e.y-e.size/2-10,e.size,5),d.fillStyle="red",d.fillRect(e.x-e.size/2,e.y-e.size/2-10,e.size*(e.hp/e.maxHp),5)});const o=t.player;d.fillStyle="#3498db",d.fillRect(o.x-o.size/2,o.y-o.size/2,o.size,o.size),o.isAttacking&&(d.fillStyle="rgba(255, 255, 255, 0.5)",d.beginPath(),d.arc(o.x,o.y,30,0,2*Math.PI),d.fill()),this.elements.floorDisplay.textContent=t.floor,this.elements.lootDisplay.textContent=t.loot.toLocaleString(),this.elements.playerHpBar.style.width=`${o.hp/o.maxHp*100}%`},handleFloorClear(){cancelAnimationFrame(this.state.dungeon.loopId),this.state.dungeon.isActive=!1,this.elements.clearLootDisplay.textContent=this.state.dungeon.loot.toLocaleString(),this.elements.floorClearMessage.style.display="block"},
     
-    handleFloorClear() {
-        cancelAnimationFrame(this.state.dungeon.loopId);
-        this.state.dungeon.isActive = false;
-        this.elements.clearLootDisplay.textContent = this.state.dungeon.loot.toLocaleString();
-        this.elements.floorClearMessage.style.display = 'block';
-    },
-
     exitDungeonSafely() {
+        this.elements.virtualControls.classList.remove('active'); // ⭐ 컨트롤러 숨기기
         this.state.clicker.money += this.state.dungeon.loot;
         this.state.permanent.nextFloorToChallenge++;
         this.saveGame();
@@ -302,6 +329,7 @@ const game = {
     },
 
     handlePlayerDeath() {
+        this.elements.virtualControls.classList.remove('active'); // ⭐ 컨트롤러 숨기기
         cancelAnimationFrame(this.state.dungeon.loopId); this.state.dungeon.isActive = false;
         const earnedSouls = Math.floor(this.state.dungeon.floor + Math.log10(this.state.dungeon.loot + 1) * 2);
         this.elements.earnedSoulDisplay.textContent = earnedSouls;
@@ -311,39 +339,50 @@ const game = {
 
     reincarnate(earnedSouls) {
         this.state.permanent.soul += earnedSouls;
-        this.state.permanent.nextFloorToChallenge = 1; // 층 진행도 초기화
-        this.state.clicker.money = 0;
-        this.state.clicker.upgrades.forEach(upg => { upg.level = 0; upg.cost = upg.baseCost; });
+        this.state.permanent.nextFloorToChallenge = 1;
+        this.resetTemporaryState();
         const startingGoldUpg = this.state.permanent.upgrades.find(u => u.id === 'starting-gold');
         this.state.clicker.money += startingGoldUpg.level * startingGoldUpg.effect;
         this.saveGame();
         this.elements.deathMessage.style.display = 'none';
         this.elements.dungeonOverlay.style.display = 'none'; this.elements.clickerView.style.display = 'block';
+        this.buildShops();
         this.updateAllDisplays();
     },
 
     updateAllDisplays() {
-        const soulPowerBonus = 1 + (this.state.permanent.upgrades.find(u => u.id === 'soul-power').level * 0.1);
-        const baseDps = this.state.clicker.upgrades.reduce((sum, upg) => sum + upg.level * upg.dps, 0);
-        this.elements.moneyDisplay.textContent = Math.floor(this.state.clicker.money).toLocaleString();
+        // ... (이전과 동일) ...
+        const p = this.state.permanent; const c = this.state.clicker;
+        const soulPowerBonus = 1 + (p.upgrades.find(u => u.id === 'soul-power').level * 0.1);
+        const baseDps = c.upgrades.reduce((sum, upg) => sum + upg.level * upg.dps, 0);
+        this.elements.moneyDisplay.textContent = Math.floor(c.money).toLocaleString();
         this.elements.dpsDisplay.textContent = Math.floor(baseDps * soulPowerBonus).toLocaleString();
-        this.elements.soulDisplay.textContent = this.state.permanent.soul.toLocaleString();
-        this.state.clicker.upgrades.forEach(upg => {
+        this.elements.soulDisplay.textContent = p.soul.toLocaleString();
+        c.upgrades.forEach(upg => {
             document.getElementById(`${upg.id}-level`).textContent = upg.level;
             document.getElementById(`${upg.id}-cost`).textContent = Math.ceil(upg.cost).toLocaleString();
-            document.querySelector(`[data-id="${upg.id}"].automation-btn`).disabled = this.state.clicker.money < upg.cost;
+            document.querySelector(`[data-id="${upg.id}"].automation-btn`).disabled = c.money < upg.cost;
         });
-        this.state.permanent.upgrades.forEach(upg => {
+        const { weapon, armor } = c.equipment;
+        document.getElementById('weapon-level').textContent = weapon.level;
+        document.getElementById('weapon-cost').textContent = weapon.cost.toLocaleString();
+        document.getElementById('weapon-desc').textContent = `공격력: ${weapon.attack}`;
+        document.querySelector('[data-id="weapon"].equipment-btn').disabled = c.money < weapon.cost;
+        document.getElementById('armor-level').textContent = armor.level;
+        document.getElementById('armor-cost').textContent = armor.cost.toLocaleString();
+        document.getElementById('armor-desc').textContent = `최대 HP: ${armor.maxHp}`;
+        document.querySelector('[data-id="armor"].equipment-btn').disabled = c.money < armor.cost;
+        p.upgrades.forEach(upg => {
             document.getElementById(`${upg.id}-level`).textContent = upg.level;
             document.getElementById(`${upg.id}-cost`).textContent = Math.ceil(upg.cost).toLocaleString();
-            document.querySelector(`[data-id="${upg.id}"].soul-btn`).disabled = this.state.permanent.soul < upg.cost;
+            document.querySelector(`[data-id="${upg.id}"].soul-btn`).disabled = p.soul < upg.cost;
         });
-        this.elements.nextFloorDisplay.textContent = `${this.state.permanent.nextFloorToChallenge}층`;
+        this.elements.nextFloorDisplay.textContent = `${p.nextFloorToChallenge}층`;
     },
 
-    saveGame() { localStorage.setItem('finalClickerState', JSON.stringify(this.state.permanent)); },
+    saveGame() { localStorage.setItem('equipmentClickerState', JSON.stringify(this.state.permanent)); },
     loadGame() {
-        const savedState = localStorage.getItem('finalClickerState');
+        const savedState = localStorage.getItem('equipmentClickerState');
         if (savedState) {
             const loaded = JSON.parse(savedState);
             this.state.permanent.soul = loaded.soul || 0;
@@ -352,7 +391,7 @@ const game = {
                 const loadedUpg = loaded.upgrades.find(u => u.id === upg.id); if (loadedUpg) Object.assign(upg, loadedUpg);
             });
             const startingGoldUpg = this.state.permanent.upgrades.find(u => u.id === 'starting-gold');
-            this.state.clicker.money = startingGoldUpg.level * startingGoldUpg.effect;
+            this.state.clicker.money += startingGoldUpg.level * startingGoldUpg.effect;
         }
     },
 };

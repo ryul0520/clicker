@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>환생 클리커 v8: 광역 전투</title>
+    <title>환생 클리커 v8.1: 밸런스 패치</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #1a1a1a; color: #f0f0f0; margin: 0; user-select: none; overflow: hidden; }
         #clicker-view { width: 1200px; margin: 20px auto; padding: 20px; background-color: #2a2a2a; border-radius: 10px; }
@@ -230,7 +230,8 @@ const game = {
     handleTouchMove(e) {
         e.preventDefault(); const touchState = this.state.dungeon.touch;
         if (touchState.joystickId === null) return;
-        for (const touch of e.changedTouches) {
+        // ⭐ 버그 수정: changedTouches -> touches
+        for (const touch of e.touches) {
             if (touch.identifier === touchState.joystickId) {
                 const deltaX = touch.clientX - touchState.joystickBasePos.x; const deltaY = touch.clientY - touchState.joystickBasePos.y;
                 const distance = Math.min(touchState.joystickMaxDist, Math.sqrt(deltaX**2 + deltaY**2));
@@ -313,7 +314,7 @@ const game = {
         if (d.floor === 10) {
             d.isBossFloor = true;
             d.enemies.push({ isBoss: true, type: 'boss', x: 400, y: 150, size: 80, speed: 0.8,
-                hp: 5000, maxHp: 5000, attack: 150, hitCooldown: 0, gold: 1000, spawnTimer: 300 });
+                hp: 10000, maxHp: 10000, attack: 300, hitCooldown: 0, gold: 1000, spawnTimer: 300, wasHitInThisSwing: false });
             return;
         }
         const numEnemies = Math.min(10, 2 + d.floor);
@@ -323,8 +324,8 @@ const game = {
                 type: isRanged ? 'ranged' : 'melee',
                 x: Math.random() * 750 + 25, y: Math.random() * 300 + 25,
                 size: 15 + Math.random() * 10, speed: 0.8 + d.floor * 0.1,
-                hp: Math.ceil(30 * Math.pow(1.4, d.floor - 1)), maxHp: Math.ceil(30 * Math.pow(1.4, d.floor - 1)),
-                attack: Math.ceil(8 * Math.pow(1.3, d.floor - 1)), hitCooldown: 0, gold: 1 + Math.floor(d.floor * 2),
+                hp: Math.ceil(60 * Math.pow(1.4, d.floor - 1)), maxHp: Math.ceil(60 * Math.pow(1.4, d.floor - 1)),
+                attack: Math.ceil(16 * Math.pow(1.3, d.floor - 1)), hitCooldown: 0, gold: 1 + Math.floor(d.floor * 2),
                 shootCooldown: isRanged ? 120 : 0, wasHitInThisSwing: false
             });
         }
@@ -345,9 +346,9 @@ const game = {
         p.x = Math.max(p.size, Math.min(this.elements.canvas.width - p.size, p.x));
         p.y = Math.max(p.size, Math.min(this.elements.canvas.height - p.size, p.y));
         if (p.attackTimer > 0) p.attackTimer--;
-        if (d.keys[' '] && p.attackTimer === 0) {
+        if (d.keys[' '] && p.attackTimer === 0) { 
             p.isAttacking = true; p.attackTimer = 30; p.attackHitbox = { x: p.x, y: p.y, size: 60 };
-            d.enemies.forEach(e => e.wasHitInThisSwing = false); // ⭐ 새 공격 시작 시 히트 플래그 초기화
+            d.enemies.forEach(e => e.wasHitInThisSwing = false);
         } else if (p.attackTimer < 15) { p.isAttacking = false; p.attackHitbox = null; }
         this.updateEnemies(); this.updateProjectiles(); this.updateHazards();
         const deadEnemies = d.enemies.filter(e => e.hp <= 0);
@@ -375,19 +376,15 @@ const game = {
                 if (dist > 100) { e.x += (dx / dist) * e.speed; e.y += (dy / dist) * e.speed; }
                 if (e.spawnTimer > 0) e.spawnTimer--;
                 else {
-                    d.enemies.push({ type: 'minion', x: e.x, y: e.y, size: 15, speed: 1.5, hp: 100, maxHp: 100, attack: 20, hitCooldown: 0, gold: 5 });
+                    d.enemies.push({ type: 'minion', x: e.x, y: e.y, size: 15, speed: 1.5, hp: 200, maxHp: 200, attack: 40, hitCooldown: 0, gold: 5, wasHitInThisSwing: false });
                     e.spawnTimer = 400 - d.floor * 10;
                 }
             }
-            // ⭐ 광역 공격 로직
             if (p.attackHitbox && !e.wasHitInThisSwing && this.isColliding(p.attackHitbox, e)) {
-                e.hp -= p.attack;
-                e.wasHitInThisSwing = true;
+                e.hp -= p.attack; e.wasHitInThisSwing = true;
             }
-            // ⭐ 몬스터 개별 공격 로직
             if (dist < p.size/2 + e.size/2 && e.hitCooldown === 0) {
-                p.hp -= e.attack;
-                e.hitCooldown = 120 + Math.random() * 60; // 쿨다운에 무작위성 추가
+                p.hp -= e.attack; e.hitCooldown = 120 + Math.random() * 60;
                 if (p.hp <= 0) { this.handlePlayerDeath(); return; }
             }
         });
@@ -436,7 +433,7 @@ const game = {
         });
         d.projectiles.forEach(proj => { ctx.fillStyle = '#ffeb3b'; ctx.beginPath(); ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2); ctx.fill(); });
         d.enemies.forEach(e => {
-            ctx.fillStyle = e.isBoss ? '#512DA8' : (e.type === 'ranged' ? '#2ecc71' : '#c0392b'); // ⭐ 슈터 색상 변경
+            ctx.fillStyle = e.isBoss ? '#512DA8' : (e.type === 'ranged' ? '#2ecc71' : '#c0392b');
             if (e.hitCooldown > 0) ctx.fillStyle = '#e74c3c';
             ctx.fillRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size);
             ctx.fillStyle = '#555'; ctx.fillRect(e.x - e.size/2, e.y - e.size/2 - 10, e.size, 5);
@@ -527,9 +524,9 @@ const game = {
         this.elements.enterDungeonBtn.disabled = p.nextFloorToChallenge > 10;
     },
 
-    saveGame() { localStorage.setItem('bossClickerState_v3', JSON.stringify(this.state.permanent)); },
+    saveGame() { localStorage.setItem('bossClickerState_v4', JSON.stringify(this.state.permanent)); },
     loadGame() {
-        const savedState = localStorage.getItem('bossClickerState_v3');
+        const savedState = localStorage.getItem('bossClickerState_v4');
         if (savedState) {
             const loaded = JSON.parse(savedState);
             this.state.permanent.soul = loaded.soul || 0;

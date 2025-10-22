@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>환생 클리커 v7: 최종 보스</title>
+    <title>환생 클리커 v8: 광역 전투</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #1a1a1a; color: #f0f0f0; margin: 0; user-select: none; overflow: hidden; }
         #clicker-view { width: 1200px; margin: 20px auto; padding: 20px; background-color: #2a2a2a; border-radius: 10px; }
@@ -45,8 +45,8 @@
 
         #virtual-controls { display: none; position: fixed; bottom: 0; left: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
         #virtual-controls.active { display: block; opacity: 1; }
-        #joystick-base { position: absolute; bottom: 50px; left: 50px; width: 120px; height: 120px; background: rgba(128, 128, 128, 0.3); border-radius: 50%; pointer-events: all; }
-        #joystick-stick { position: absolute; top: 35px; left: 35px; width: 50px; height: 50px; background: rgba(200, 200, 200, 0.5); border-radius: 50%; }
+        #joystick-base { position: absolute; bottom: 50px; left: 50px; width: 180px; height: 180px; background: rgba(128, 128, 128, 0.3); border-radius: 50%; pointer-events: all; }
+        #joystick-stick { position: absolute; top: 52.5px; left: 52.5px; width: 75px; height: 75px; background: rgba(200, 200, 200, 0.5); border-radius: 50%; }
         #attack-button { position: absolute; bottom: 50px; right: 50px; width: 80px; height: 80px; background: rgba(231, 76, 60, 0.5); border: 2px solid rgba(231, 76, 60, 0.8); border-radius: 50%; pointer-events: all; display: flex; justify-content: center; align-items: center; font-size: 1.5em; color: white; }
         #attack-button:active { background: rgba(192, 57, 43, 0.8); }
     </style>
@@ -118,7 +118,7 @@ const game = {
         dungeon: {
             isActive: false, isFloorCleared: false, isBossFloor: false, floor: 1, loot: 0, keys: {},
             player: {}, enemies: [], projectiles: [], hazards: [], loopId: null,
-            touch: { joystickId: null, attackId: null, joystickBasePos: {x:0, y:0}, joystickMaxDist: 40 }
+            touch: { joystickId: null, attackId: null, joystickBasePos: {x:0, y:0}, joystickMaxDist: 60, joystickVector: {x: 0, y: 0} }
         }
     },
     elements: {}, ctx: null,
@@ -144,7 +144,7 @@ const game = {
         this.state.clicker.equipment = {
             weapon: { name: '낡은 검', level: 1, baseCost: 50, cost: 50, attack: 5 },
             armor: { name: '가죽 갑옷', level: 1, baseCost: 50, cost: 50, maxHp: 100 },
-            boots: { name: '낡은 신발', level: 1, baseCost: 75, cost: 75, speed: 3 }
+            boots: { name: '낡은 신발', level: 1, baseCost: 75, cost: 75, speed: 2 }
         };
         if (isFirstLoad) {
             this.state.permanent.upgrades = [
@@ -235,13 +235,11 @@ const game = {
                 const deltaX = touch.clientX - touchState.joystickBasePos.x; const deltaY = touch.clientY - touchState.joystickBasePos.y;
                 const distance = Math.min(touchState.joystickMaxDist, Math.sqrt(deltaX**2 + deltaY**2));
                 const angle = Math.atan2(deltaY, deltaX);
-                const moveX = Math.cos(angle) * distance; const moveY = Math.sin(angle) * distance;
-                this.elements.joystickStick.style.transform = `translate(${moveX}px, ${moveY}px)`;
-                const keys = this.state.dungeon.keys;
-                keys['w'] = keys['arrowup'] = deltaY < -touchState.joystickMaxDist * 0.3;
-                keys['s'] = keys['arrowdown'] = deltaY > touchState.joystickMaxDist * 0.3;
-                keys['a'] = keys['arrowleft'] = deltaX < -touchState.joystickMaxDist * 0.3;
-                keys['d'] = keys['arrowright'] = deltaX > touchState.joystickMaxDist * 0.3;
+                const stickX = Math.cos(angle) * distance; const stickY = Math.sin(angle) * distance;
+                this.elements.joystickStick.style.transform = `translate(${stickX}px, ${stickY}px)`;
+                const ratio = distance / touchState.joystickMaxDist;
+                touchState.joystickVector.x = Math.cos(angle) * ratio;
+                touchState.joystickVector.y = Math.sin(angle) * ratio;
             }
         }
     },
@@ -251,7 +249,7 @@ const game = {
         for (const touch of e.changedTouches) {
             if (touch.identifier === touchState.joystickId) {
                 touchState.joystickId = null; this.elements.joystickStick.style.transform = `translate(0px, 0px)`;
-                Object.keys(this.state.dungeon.keys).forEach(k => this.state.dungeon.keys[k] = false);
+                touchState.joystickVector = { x: 0, y: 0 };
             }
             if (touch.identifier === touchState.attackId) {
                 touchState.attackId = null; this.state.dungeon.keys[' '] = false;
@@ -297,8 +295,7 @@ const game = {
         d.isActive = true; d.isFloorCleared = false; d.isBossFloor = false;
         d.floor = this.state.permanent.nextFloorToChallenge; d.loot = 0; d.keys = {};
         d.projectiles = []; d.hazards = []; d.bombSpawnTimer = 180;
-        
-        const warriorSpiritBonus = 1 + (this.state.permanent.upgrades.find(u => u.id === 'warrior-spirit').level * 0.3); // 30%
+        const warriorSpiritBonus = 1 + (this.state.permanent.upgrades.find(u => u.id === 'warrior-spirit').level * 0.3);
         d.player = { 
             x: 400, y: 500, size: 20, speed: this.state.clicker.equipment.boots.speed, 
             maxHp: this.state.clicker.equipment.armor.maxHp, hp: this.state.clicker.equipment.armor.maxHp, 
@@ -328,7 +325,7 @@ const game = {
                 size: 15 + Math.random() * 10, speed: 0.8 + d.floor * 0.1,
                 hp: Math.ceil(30 * Math.pow(1.4, d.floor - 1)), maxHp: Math.ceil(30 * Math.pow(1.4, d.floor - 1)),
                 attack: Math.ceil(8 * Math.pow(1.3, d.floor - 1)), hitCooldown: 0, gold: 1 + Math.floor(d.floor * 2),
-                shootCooldown: isRanged ? 120 : 0
+                shootCooldown: isRanged ? 120 : 0, wasHitInThisSwing: false
             });
         }
     },
@@ -336,20 +333,26 @@ const game = {
     dungeonLoop() { if (!this.state.dungeon.isActive) return; this.updateDungeonState(); this.drawDungeon(); this.state.dungeon.loopId = requestAnimationFrame(this.dungeonLoop.bind(this)); },
     updateDungeonState() {
         const d = this.state.dungeon; if (d.isFloorCleared) return; const p = d.player;
-        if (d.keys['w'] || d.keys['arrowup']) p.y -= p.speed; if (d.keys['s'] || d.keys['arrowdown']) p.y += p.speed;
-        if (d.keys['a'] || d.keys['arrowleft']) p.x -= p.speed; if (d.keys['d'] || d.keys['arrowright']) p.x += p.speed;
+        let moveX = 0, moveY = 0;
+        if (d.keys['w'] || d.keys['arrowup']) moveY -= 1;
+        if (d.keys['s'] || d.keys['arrowdown']) moveY += 1;
+        if (d.keys['a'] || d.keys['arrowleft']) moveX -= 1;
+        if (d.keys['d'] || d.keys['arrowright']) moveX += 1;
+        if (d.touch.joystickId !== null) { moveX = d.touch.joystickVector.x; moveY = d.touch.joystickVector.y; }
+        const magnitude = Math.sqrt(moveX**2 + moveY**2);
+        if (magnitude > 1) { moveX /= magnitude; moveY /= magnitude; }
+        p.x += moveX * p.speed; p.y += moveY * p.speed;
         p.x = Math.max(p.size, Math.min(this.elements.canvas.width - p.size, p.x));
         p.y = Math.max(p.size, Math.min(this.elements.canvas.height - p.size, p.y));
         if (p.attackTimer > 0) p.attackTimer--;
-        if (d.keys[' '] && p.attackTimer === 0) { p.isAttacking = true; p.attackTimer = 30; p.attackHitbox = { x: p.x, y: p.y, size: 60 }; } 
-        else if (p.attackTimer < 15) { p.isAttacking = false; p.attackHitbox = null; }
-        
+        if (d.keys[' '] && p.attackTimer === 0) {
+            p.isAttacking = true; p.attackTimer = 30; p.attackHitbox = { x: p.x, y: p.y, size: 60 };
+            d.enemies.forEach(e => e.wasHitInThisSwing = false); // ⭐ 새 공격 시작 시 히트 플래그 초기화
+        } else if (p.attackTimer < 15) { p.isAttacking = false; p.attackHitbox = null; }
         this.updateEnemies(); this.updateProjectiles(); this.updateHazards();
-
         const deadEnemies = d.enemies.filter(e => e.hp <= 0);
         deadEnemies.forEach(de => { d.loot += de.gold; if (de.isBoss) d.isFloorCleared = true; });
         d.enemies = d.enemies.filter(e => e.hp > 0);
-        
         if (d.enemies.length === 0 && !d.isFloorCleared) {
             d.isFloorCleared = true; d.loot += 100 * d.floor; this.handleFloorClear();
         } else if (d.isBossFloor && d.isFloorCleared) { this.handleFloorClear(); }
@@ -360,7 +363,6 @@ const game = {
         d.enemies.forEach(e => {
             if (e.hitCooldown > 0) e.hitCooldown--;
             const dx = p.x - e.x, dy = p.y - e.y, dist = Math.sqrt(dx**2 + dy**2);
-
             if (e.type === 'melee' || e.type === 'minion') { if (dist > p.size) { e.x += (dx / dist) * e.speed; e.y += (dy / dist) * e.speed; } }
             else if (e.type === 'ranged') {
                 if (dist > 200) { e.x += (dx / dist) * e.speed; e.y += (dy / dist) * e.speed; }
@@ -377,29 +379,28 @@ const game = {
                     e.spawnTimer = 400 - d.floor * 10;
                 }
             }
-
-            if (p.attackHitbox && this.isColliding(p.attackHitbox, e)) { e.hp -= p.attack; p.attackHitbox = null; }
+            // ⭐ 광역 공격 로직
+            if (p.attackHitbox && !e.wasHitInThisSwing && this.isColliding(p.attackHitbox, e)) {
+                e.hp -= p.attack;
+                e.wasHitInThisSwing = true;
+            }
+            // ⭐ 몬스터 개별 공격 로직
             if (dist < p.size/2 + e.size/2 && e.hitCooldown === 0) {
-                p.hp -= e.attack; e.hitCooldown = 120;
+                p.hp -= e.attack;
+                e.hitCooldown = 120 + Math.random() * 60; // 쿨다운에 무작위성 추가
                 if (p.hp <= 0) { this.handlePlayerDeath(); return; }
             }
         });
     },
-
     updateProjectiles() {
         const d = this.state.dungeon, p = d.player, canvas = this.elements.canvas;
         d.projectiles.forEach(proj => {
             proj.x += proj.vx; proj.y += proj.vy;
-            if (this.isColliding(proj, p)) {
-                p.hp -= proj.damage; proj.hp = 0; // Mark for removal
-                if (p.hp <= 0) this.handlePlayerDeath();
-            } else if (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height) {
-                proj.hp = 0;
-            }
+            if (this.isColliding(proj, p)) { p.hp -= proj.damage; proj.hp = 0; if (p.hp <= 0) this.handlePlayerDeath(); } 
+            else if (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height) { proj.hp = 0; }
         });
         d.projectiles = d.projectiles.filter(proj => proj.hp !== 0);
     },
-
     updateHazards() {
         const d = this.state.dungeon, p = d.player, canvas = this.elements.canvas;
         if (d.floor >= 7 && !d.isBossFloor) {
@@ -410,22 +411,16 @@ const game = {
             }
         }
         d.hazards.forEach(h => {
-            if (h.type === 'bomb') {
-                h.timer--;
-                if (h.timer <= 0) {
-                    h.type = 'explosion'; h.size = 80; h.life = 30; // Mark for removal next frame
-                }
-            } else if (h.type === 'explosion') {
+            if (h.type === 'bomb') { h.timer--; if (h.timer <= 0) { h.type = 'explosion'; h.size = 80; h.life = 30; } } 
+            else if (h.type === 'explosion') {
                 if (h.life === 30 && this.isColliding(h, p)) p.hp -= 50 * d.floor;
-                h.life--;
-                if (p.hp <= 0) this.handlePlayerDeath();
+                h.life--; if (p.hp <= 0) this.handlePlayerDeath();
             }
         });
         d.hazards = d.hazards.filter(h => h.life !== 0);
     },
     
     isColliding(c1, c2) { const dist = Math.sqrt((c1.x - c2.x)**2 + (c1.y - c2.y)**2); return dist < (c1.size / 2 + c2.size / 2); },
-
     drawDungeon() {
         const ctx = this.ctx, canvas = this.elements.canvas, d = this.state.dungeon;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -441,7 +436,7 @@ const game = {
         });
         d.projectiles.forEach(proj => { ctx.fillStyle = '#ffeb3b'; ctx.beginPath(); ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2); ctx.fill(); });
         d.enemies.forEach(e => {
-            ctx.fillStyle = e.isBoss ? '#512DA8' : (e.type === 'ranged' ? '#1E88E5' : '#c0392b');
+            ctx.fillStyle = e.isBoss ? '#512DA8' : (e.type === 'ranged' ? '#2ecc71' : '#c0392b'); // ⭐ 슈터 색상 변경
             if (e.hitCooldown > 0) ctx.fillStyle = '#e74c3c';
             ctx.fillRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size);
             ctx.fillStyle = '#555'; ctx.fillRect(e.x - e.size/2, e.y - e.size/2 - 10, e.size, 5);
@@ -467,7 +462,7 @@ const game = {
     exitDungeonSafely() {
         this.elements.virtualControls.classList.remove('active');
         this.state.clicker.money += this.state.dungeon.loot;
-        if (this.state.permanent.nextFloorToChallenge <= 10) this.state.permanent.nextFloorToChallenge++;
+        if (this.state.permanent.nextFloorToChallenge < 10) this.state.permanent.nextFloorToChallenge++;
         this.saveGame();
         this.elements.floorClearMessage.style.display = 'none';
         this.elements.dungeonOverlay.style.display = 'none'; this.elements.clickerView.style.display = 'block';
@@ -532,9 +527,9 @@ const game = {
         this.elements.enterDungeonBtn.disabled = p.nextFloorToChallenge > 10;
     },
 
-    saveGame() { localStorage.setItem('bossClickerState', JSON.stringify(this.state.permanent)); },
+    saveGame() { localStorage.setItem('bossClickerState_v3', JSON.stringify(this.state.permanent)); },
     loadGame() {
-        const savedState = localStorage.getItem('bossClickerState');
+        const savedState = localStorage.getItem('bossClickerState_v3');
         if (savedState) {
             const loaded = JSON.parse(savedState);
             this.state.permanent.soul = loaded.soul || 0;

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>환생 클리커 v3</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #1a1a1a; color: #f0f0f0; margin: 0; user-select: none; overflow: hidden; }
+        #clicker-view { width: 1200px; margin: 20px auto; padding: 20px; background-color: #2a2a2a; border-radius: 10px; }
+        header { text-align: center; margin-bottom: 20px; }
+        header h1 { margin: 0; color: #e74c3c; }
+        #main-content { display: flex; justify-content: space-between; gap: 20px; }
+        .section { border: 1px solid #555; border-radius: 8px; padding: 15px; flex-basis: 32%; background-color: #333; }
+        .section h2 { margin-top: 0; color: #eee; text-align: center; }
+        #main-clicker-css { width: 150px; height: 150px; background: radial-gradient(circle, #ff5e5e 0%, #c0392b 100%); border-radius: 50%; margin: 10px auto; cursor: pointer; position: relative; box-shadow: 0 5px 10px rgba(0,0,0,0.4), inset 0 0 15px rgba(255,255,255,0.5); border: 5px solid #7b241c; }
+        #main-clicker-css:active { transform: scale(0.95); }
+        .stats p { font-size: 1.1em; }
+        .stats .money-stat span { font-weight: bold; color: #f1c40f; }
+        .stats .soul-stat span { font-weight: bold; color: #9b59b6; }
+        .shop-tabs { display: flex; border-bottom: 1px solid #555; margin-bottom: 10px; }
+        .shop-tab { padding: 10px; cursor: pointer; border-radius: 5px 5px 0 0; }
+        .shop-tab.active { background: #444; }
+        .shop-content { display: none; } .shop-content.active { display: block; }
+        .shop-item { display: flex; justify-content: space-between; align-items: center; border: 1px solid #555; padding: 10px; margin-bottom: 10px; border-radius: 5px; }
+        .shop-item button { padding: 8px 12px; cursor: pointer; color: white; border: none; border-radius: 3px; }
+        .shop-item button.automation-btn { background: #2980b9; }
+        .shop-item button.soul-btn { background: #8e44ad; }
+        .shop-item button:disabled { background: #7f8c8d; cursor: not-allowed; }
+        #dungeon-entry-controls { text-align: center; margin-top: 20px; }
+        #next-floor-display { font-size: 1.5em; font-weight: bold; color: #e67e22; }
+        #enter-dungeon-btn { width: 100%; padding: 15px; font-size: 1.5em; font-weight: bold; background: #e67e22; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px; }
+
+        #dungeon-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; display: none; justify-content: center; align-items: center; }
+        #dungeon-canvas { background: #1a1a1a; border: 2px solid #555; }
+        #dungeon-ui { position: fixed; top: 20px; left: 20px; color: white; font-size: 1.2em; text-shadow: 2px 2px 4px #000; }
+        #player-hp-bar-container { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: 300px; height: 30px; background: rgba(0,0,0,0.5); border: 2px solid #aaa; border-radius: 5px; }
+        #player-hp-bar { width: 100%; height: 100%; background: #c0392b; transition: width 0.2s; }
+        .dungeon-message-overlay { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(0,0,0,0.8); padding: 40px; border-radius: 10px; }
+        .dungeon-message-overlay h1 { font-size: 3em; margin: 0; }
+        .dungeon-message-overlay p { font-size: 1.2em; }
+        #death-message { color: #e74c3c; }
+        #floor-clear-message { color: #2ecc71; }
+        #continue-btn { padding: 10px 20px; font-size: 1.2em; margin-top: 20px; background: #27ae60; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div id="clicker-view">
+        <header><h1>환생 클리커</h1></header>
+        <main id="main-content">
+            <section class="section">
+                <h2>자금 확보</h2>
+                <div id="main-clicker-css"></div>
+                <div class="stats">
+                    <p class="money-stat">보유 금액: <span id="money-display">0</span> 원</p>
+                    <p class="money-stat">초당 생산량(DPS): <span id="dps-display">0</span></p>
+                    <p class="soul-stat">보유 영혼: <span id="soul-display">0</span> 개</p>
+                </div>
+            </section>
+            <section class="section">
+                <h2>상점</h2>
+                <div class="shop-tabs">
+                    <div class="shop-tab active" data-tab="automation">자동화</div>
+                    <div class="shop-tab" data-tab="soul">영혼 상점</div>
+                </div>
+                <div id="automation-shop" class="shop-content active"></div>
+                <div id="soul-shop" class="shop-content"></div>
+            </section>
+            <section class="section">
+                <h2>탐험</h2>
+                <p>던전에 입장하여 부와 명예를 얻으세요. 죽으면 모든 것을 잃고 환생하게 됩니다.</p>
+                <div id="dungeon-entry-controls">
+                    <p>도전할 층: <span id="next-floor-display">1층</span></p>
+                    <button id="enter-dungeon-btn">던전 입장</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="dungeon-overlay">
+        <canvas id="dungeon-canvas" width="800" height="600"></canvas>
+        <div id="dungeon-ui">
+            <div>층: <span id="floor-display">1</span></div>
+            <div>획득 금액: <span id="loot-display">0</span></div>
+        </div>
+        <div id="player-hp-bar-container"><div id="player-hp-bar"></div></div>
+        <div id="death-message" class="dungeon-message-overlay">
+            <h1>YOU DIED</h1>
+            <p>획득한 영혼: <span id="earned-soul-display">0</span></p>
+            <p>3초 후 마을로 돌아갑니다...</p>
+        </div>
+        <div id="floor-clear-message" class="dungeon-message-overlay">
+            <h1>CLEAR!</h1>
+            <p>획득한 금액: <span id="clear-loot-display">0</span></p>
+            <button id="continue-btn">마을로 귀환</button>
+        </div>
+    </div>
+
+<script>
+const game = {
+    state: {
+        clicker: { money: 0, upgrades: [] },
+        permanent: { soul: 0, nextFloorToChallenge: 1, upgrades: [] },
+        dungeon: {
+            isActive: false, isFloorCleared: false, floor: 1, loot: 0, keys: {},
+            player: {}, enemies: [], loopId: null, floatingTexts: []
+        }
+    },
+    elements: {}, ctx: null,
+
+    init() {
+        this.state.clicker.upgrades = [
+            { id: 'worker', name: '알바생', level: 0, baseCost: 15, cost: 15, dps: 1 },
+            { id: 'machine', name: '코인 기계', level: 0, baseCost: 120, cost: 120, dps: 8 },
+            { id: 'factory', name: '코인 공장', level: 0, baseCost: 1300, cost: 1300, dps: 50 },
+            { id: 'corp', name: '대기업', level: 0, baseCost: 15000, cost: 15000, dps: 280 },
+            { id: 'bank', name: '중앙 은행', level: 0, baseCost: 180000, cost: 180000, dps: 1500 },
+            { id: 'mint', name: '조폐국', level: 0, baseCost: 2000000, cost: 2000000, dps: 8000 },
+            { id: 'planet', name: '행성 채굴', level: 0, baseCost: 25000000, cost: 25000000, dps: 50000 },
+        ];
+        this.state.permanent.upgrades = [
+            { id: 'soul-power', name: '영혼의 힘', level: 0, cost: 1, effect: 0.1, desc: "모든 DPS 10% 증가" },
+            { id: 'starting-gold', name: '자본금', level: 0, cost: 2, effect: 100, desc: "시작 금액 +100원" },
+            { id: 'warrior-spirit', name: '전사의 영혼', level: 0, cost: 5, effect: 0.1, desc: "던전 공격력 10% 증가" },
+        ];
+        this.cacheElements();
+        this.ctx = this.elements.canvas.getContext('2d');
+        this.loadGame();
+        this.buildShops();
+        this.addEventListeners();
+        setInterval(() => this.runAutoProduction(), 100);
+        this.updateAllDisplays();
+    },
+
+    cacheElements() {
+        this.elements = {
+            clickerView: document.getElementById('clicker-view'),
+            moneyDisplay: document.getElementById('money-display'), dpsDisplay: document.getElementById('dps-display'),
+            soulDisplay: document.getElementById('soul-display'),
+            automationShop: document.getElementById('automation-shop'), soulShop: document.getElementById('soul-shop'),
+            shopTabs: document.querySelectorAll('.shop-tab'),
+            nextFloorDisplay: document.getElementById('next-floor-display'),
+            enterDungeonBtn: document.getElementById('enter-dungeon-btn'),
+            dungeonOverlay: document.getElementById('dungeon-overlay'), canvas: document.getElementById('dungeon-canvas'),
+            floorDisplay: document.getElementById('floor-display'), lootDisplay: document.getElementById('loot-display'), 
+            playerHpBar: document.getElementById('player-hp-bar'),
+            deathMessage: document.getElementById('death-message'), earnedSoulDisplay: document.getElementById('earned-soul-display'),
+            floorClearMessage: document.getElementById('floor-clear-message'),
+            clearLootDisplay: document.getElementById('clear-loot-display'),
+            continueBtn: document.getElementById('continue-btn'),
+        };
+    },
+
+    buildShops() {
+        this.state.clicker.upgrades.forEach(upg => this.elements.automationShop.innerHTML += this.createShopItemHTML(upg.id, upg.name, upg.level, upg.cost, `DPS: +${upg.dps}`, 'automation-btn'));
+        this.state.permanent.upgrades.forEach(upg => this.elements.soulShop.innerHTML += this.createShopItemHTML(upg.id, upg.name, upg.level, upg.cost, upg.desc, 'soul-btn'));
+    },
+    
+    createShopItemHTML(id, name, level, cost, desc, btnClass) {
+        return `<div class="shop-item" id="${id}-item"><div><strong>${name} (Lv.<span id="${id}-level">${level}</span>)</strong><br><small>${desc} | 비용: <span id="${id}-cost">${cost}</span></small></div><button class="shop-btn ${btnClass}" data-id="${id}">구매</button></div>`;
+    },
+
+    addEventListeners() {
+        document.getElementById('main-clicker-css').addEventListener('click', () => { this.state.clicker.money++; this.updateAllDisplays(); });
+        this.elements.shopTabs.forEach(tab => tab.addEventListener('click', e => {
+            document.querySelectorAll('.shop-tab, .shop-content').forEach(el => el.classList.remove('active'));
+            e.target.classList.add('active'); document.getElementById(e.target.dataset.tab + '-shop').classList.add('active');
+        }));
+        document.querySelector('#automation-shop').addEventListener('click', e => this.buyUpgrade(e, 'automation'));
+        document.querySelector('#soul-shop').addEventListener('click', e => this.buyUpgrade(e, 'soul'));
+        this.elements.enterDungeonBtn.addEventListener('click', () => this.enterDungeon());
+        this.elements.continueBtn.addEventListener('click', () => this.exitDungeonSafely());
+    },
+
+    runAutoProduction() {
+        const soulPowerBonus = 1 + (this.state.permanent.upgrades.find(u => u.id === 'soul-power').level * 0.1);
+        const baseDps = this.state.clicker.upgrades.reduce((sum, upg) => sum + upg.level * upg.dps, 0);
+        this.state.clicker.money += (baseDps * soulPowerBonus) / 10;
+        this.updateAllDisplays();
+    },
+
+    buyUpgrade(event, type) {
+        if (event.target.tagName !== 'BUTTON') return;
+        const id = event.target.dataset.id;
+        if (type === 'automation') {
+            const upg = this.state.clicker.upgrades.find(u => u.id === id);
+            if (this.state.clicker.money >= upg.cost) { this.state.clicker.money -= upg.cost; upg.level++; upg.cost = Math.ceil(upg.cost * 1.25); }
+        } else if (type === 'soul') {
+            const upg = this.state.permanent.upgrades.find(u => u.id === id);
+            if (this.state.permanent.soul >= upg.cost) {
+                this.state.permanent.soul -= upg.cost; upg.level++; upg.cost = Math.ceil(upg.cost * 1.5);
+                if (upg.id === 'starting-gold') this.state.clicker.money += upg.effect;
+            }
+        }
+        this.updateAllDisplays();
+    },
+
+    enterDungeon() {
+        this.elements.clickerView.style.display = 'none'; this.elements.dungeonOverlay.style.display = 'flex';
+        const d = this.state.dungeon;
+        d.isActive = true; d.isFloorCleared = false; d.floor = this.state.permanent.nextFloorToChallenge;
+        d.loot = 0; d.keys = {}; d.floatingTexts = [];
+        const warriorSpiritBonus = 1 + (this.state.permanent.upgrades.find(u => u.id === 'warrior-spirit').level * 0.1);
+        d.player = { x: 400, y: 500, size: 20, speed: 3, hp: 100, maxHp: 100, attack: 10 * warriorSpiritBonus, isAttacking: false, attackTimer: 0, attackHitbox: null };
+        this.generateFloor();
+        window.addEventListener('keydown', e => this.state.dungeon.keys[e.key.toLowerCase()] = true);
+        window.addEventListener('keyup', e => this.state.dungeon.keys[e.key.toLowerCase()] = false);
+        d.loopId = requestAnimationFrame(this.dungeonLoop.bind(this));
+    },
+
+    generateFloor() {
+        const d = this.state.dungeon; d.enemies = []; const numEnemies = 2 + d.floor;
+        for (let i = 0; i < numEnemies; i++) {
+            d.enemies.push({
+                x: Math.random() * 750 + 25, y: Math.random() * 300 + 25,
+                size: 15 + Math.random() * 10, speed: 0.5 + Math.random() * 0.5,
+                hp: Math.ceil(20 * d.floor * 1.2), maxHp: Math.ceil(20 * d.floor * 1.2),
+                attack: Math.ceil(5 * d.floor * 1.1), hitCooldown: 0, gold: 1 + Math.floor(d.floor * 2)
+            });
+        }
+    },
+
+    dungeonLoop() {
+        if (!this.state.dungeon.isActive) return;
+        this.updateDungeonState();
+        this.drawDungeon();
+        this.state.dungeon.loopId = requestAnimationFrame(this.dungeonLoop.bind(this));
+    },
+
+    updateDungeonState() {
+        const d = this.state.dungeon; if (d.isFloorCleared) return; const p = d.player;
+        if (d.keys['w'] || d.keys['ArrowUp']) p.y -= p.speed; if (d.keys['s'] || d.keys['ArrowDown']) p.y += p.speed;
+        if (d.keys['a'] || d.keys['ArrowLeft']) p.x -= p.speed; if (d.keys['d'] || d.keys['ArrowRight']) p.x += p.speed;
+        p.x = Math.max(p.size, Math.min(this.elements.canvas.width - p.size, p.x));
+        p.y = Math.max(p.size, Math.min(this.elements.canvas.height - p.size, p.y));
+        if (p.attackTimer > 0) p.attackTimer--;
+        if (d.keys[' '] && p.attackTimer === 0) {
+            p.isAttacking = true; p.attackTimer = 30; p.attackHitbox = { x: p.x, y: p.y, size: 60 };
+        } else if (p.attackTimer < 15) { p.isAttacking = false; p.attackHitbox = null; }
+        
+        d.enemies.forEach(e => {
+            if (e.hitCooldown > 0) e.hitCooldown--;
+            const dx = p.x - e.x; const dy = p.y - e.y; const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > p.size) { e.x += (dx / dist) * e.speed; e.y += (dy / dist) * e.speed; }
+            if (p.attackHitbox && this.isColliding(p.attackHitbox, e)) { e.hp -= p.attack; p.attackHitbox = null; }
+            if (dist < p.size + e.size / 2 && e.hitCooldown === 0) {
+                p.hp -= e.attack; e.hitCooldown = 120;
+                if (p.hp <= 0) { this.handlePlayerDeath(); return; }
+            }
+        });
+        
+        const deadEnemies = d.enemies.filter(e => e.hp <= 0);
+        deadEnemies.forEach(de => d.loot += de.gold);
+        d.enemies = d.enemies.filter(e => e.hp > 0);
+
+        if (d.enemies.length === 0 && !d.isFloorCleared) {
+            d.isFloorCleared = true;
+            const floorClearBonus = 100 * d.floor;
+            d.loot += floorClearBonus;
+            this.handleFloorClear();
+        }
+    },
+    
+    isColliding(c1, c2) {
+        const dist = Math.sqrt((c1.x - c2.x)**2 + (c1.y - c2.y)**2);
+        return dist < (c1.size / 2 + c2.size / 2);
+    },
+
+    drawDungeon() {
+        const ctx = this.ctx; const canvas = this.elements.canvas; const d = this.state.dungeon;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        d.enemies.forEach(e => {
+            ctx.fillStyle = e.hitCooldown > 0 ? '#e74c3c' : '#c0392b';
+            ctx.fillRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size);
+            ctx.fillStyle = '#555'; ctx.fillRect(e.x - e.size/2, e.y - e.size/2 - 10, e.size, 5);
+            ctx.fillStyle = 'red'; ctx.fillRect(e.x - e.size/2, e.y - e.size/2 - 10, e.size * (e.hp / e.maxHp), 5);
+        });
+        const p = d.player;
+        ctx.fillStyle = '#3498db'; ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+        if (p.isAttacking) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.beginPath(); ctx.arc(p.x, p.y, 30, 0, Math.PI * 2); ctx.fill();
+        }
+
+        this.elements.floorDisplay.textContent = d.floor; this.elements.lootDisplay.textContent = d.loot.toLocaleString();
+        this.elements.playerHpBar.style.width = `${(p.hp / p.maxHp) * 100}%`;
+    },
+    
+    handleFloorClear() {
+        cancelAnimationFrame(this.state.dungeon.loopId);
+        this.state.dungeon.isActive = false;
+        this.elements.clearLootDisplay.textContent = this.state.dungeon.loot.toLocaleString();
+        this.elements.floorClearMessage.style.display = 'block';
+    },
+
+    exitDungeonSafely() {
+        this.state.clicker.money += this.state.dungeon.loot;
+        this.state.permanent.nextFloorToChallenge++;
+        this.saveGame();
+        this.elements.floorClearMessage.style.display = 'none';
+        this.elements.dungeonOverlay.style.display = 'none'; this.elements.clickerView.style.display = 'block';
+        this.updateAllDisplays();
+    },
+
+    handlePlayerDeath() {
+        cancelAnimationFrame(this.state.dungeon.loopId); this.state.dungeon.isActive = false;
+        const earnedSouls = Math.floor(this.state.dungeon.floor + Math.log10(this.state.dungeon.loot + 1) * 2);
+        this.elements.earnedSoulDisplay.textContent = earnedSouls;
+        this.elements.deathMessage.style.display = 'block';
+        setTimeout(() => this.reincarnate(earnedSouls), 3000);
+    },
+
+    reincarnate(earnedSouls) {
+        this.state.permanent.soul += earnedSouls;
+        this.state.permanent.nextFloorToChallenge = 1; // 층 진행도 초기화
+        this.state.clicker.money = 0;
+        this.state.clicker.upgrades.forEach(upg => { upg.level = 0; upg.cost = upg.baseCost; });
+        const startingGoldUpg = this.state.permanent.upgrades.find(u => u.id === 'starting-gold');
+        this.state.clicker.money += startingGoldUpg.level * startingGoldUpg.effect;
+        this.saveGame();
+        this.elements.deathMessage.style.display = 'none';
+        this.elements.dungeonOverlay.style.display = 'none'; this.elements.clickerView.style.display = 'block';
+        this.updateAllDisplays();
+    },
+
+    updateAllDisplays() {
+        const soulPowerBonus = 1 + (this.state.permanent.upgrades.find(u => u.id === 'soul-power').level * 0.1);
+        const baseDps = this.state.clicker.upgrades.reduce((sum, upg) => sum + upg.level * upg.dps, 0);
+        this.elements.moneyDisplay.textContent = Math.floor(this.state.clicker.money).toLocaleString();
+        this.elements.dpsDisplay.textContent = Math.floor(baseDps * soulPowerBonus).toLocaleString();
+        this.elements.soulDisplay.textContent = this.state.permanent.soul.toLocaleString();
+        this.state.clicker.upgrades.forEach(upg => {
+            document.getElementById(`${upg.id}-level`).textContent = upg.level;
+            document.getElementById(`${upg.id}-cost`).textContent = Math.ceil(upg.cost).toLocaleString();
+            document.querySelector(`[data-id="${upg.id}"].automation-btn`).disabled = this.state.clicker.money < upg.cost;
+        });
+        this.state.permanent.upgrades.forEach(upg => {
+            document.getElementById(`${upg.id}-level`).textContent = upg.level;
+            document.getElementById(`${upg.id}-cost`).textContent = Math.ceil(upg.cost).toLocaleString();
+            document.querySelector(`[data-id="${upg.id}"].soul-btn`).disabled = this.state.permanent.soul < upg.cost;
+        });
+        this.elements.nextFloorDisplay.textContent = `${this.state.permanent.nextFloorToChallenge}층`;
+    },
+
+    saveGame() { localStorage.setItem('finalClickerState', JSON.stringify(this.state.permanent)); },
+    loadGame() {
+        const savedState = localStorage.getItem('finalClickerState');
+        if (savedState) {
+            const loaded = JSON.parse(savedState);
+            this.state.permanent.soul = loaded.soul || 0;
+            this.state.permanent.nextFloorToChallenge = loaded.nextFloorToChallenge || 1;
+            this.state.permanent.upgrades.forEach(upg => {
+                const loadedUpg = loaded.upgrades.find(u => u.id === upg.id); if (loadedUpg) Object.assign(upg, loadedUpg);
+            });
+            const startingGoldUpg = this.state.permanent.upgrades.find(u => u.id === 'starting-gold');
+            this.state.clicker.money = startingGoldUpg.level * startingGoldUpg.effect;
+        }
+    },
+};
+game.init();
+</script>
+</body>
+</html>
